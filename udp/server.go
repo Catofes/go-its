@@ -10,6 +10,7 @@ import (
 
 var log *logging.Logger
 var Server *MainServer
+var MainWaitGroup sync.WaitGroup
 
 func init() {
 	log = Log.GetInstance()
@@ -22,6 +23,7 @@ type MainServer struct {
 	buffer        []byte
 	mutex         sync.Mutex
 	handler       map[byte]Handler
+	connection    *net.UDPConn
 }
 
 func (s *MainServer) loadConfig() {
@@ -34,21 +36,21 @@ func (s *MainServer) Init() {
 	s.loadConfig()
 	s.buffer = make([]byte, 1024)
 	s.handler = make(map[byte]Handler, 5)
-	s.loop()
 }
 
-func (s *MainServer) loop() {
+func (s *MainServer) Loop() {
 	address, err := net.ResolveUDPAddr("udp", s.ListenAddress+":"+string(s.ListenPort))
 	if err != nil {
 		log.Fatal("Can't resolve address: ", err)
 	}
 	connection, err := net.ListenUDP("udp", address)
+	s.connection = connection
 	if err != nil {
 		log.Fatal("Can't listen udp on", address, err)
 	}
-	defer connection.Close()
+	defer s.connection.Close()
 	for {
-		s.handleClient(connection)
+		s.handleClient(s.connection)
 	}
 }
 
@@ -87,6 +89,8 @@ func (s *MainServer) DeleteHandler(package_type byte) {
 
 func Run() {
 	Server = &MainServer{}
+	Server.Init()
 	Server.AddHandler(byte(0), EchoRequestHandler)
-	go Server.Init()
+	MainWaitGroup.Add(1)
+	go Server.Loop()
 }
