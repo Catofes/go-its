@@ -12,9 +12,10 @@ var log *logging.Logger
 
 type MainConfig struct {
 	ListenAddress       string
-	ListenPort          int
+	ListenPort          uint16
 	CenterServerAddress string
-	CenterServerPort    int
+	CenterServerPort    uint16
+	Token               uint64
 }
 
 func (s *MainConfig) Load(file_path string) {
@@ -42,6 +43,6 @@ func GetInstance(path string) *MainConfig {
 	return instance
 }
 
-func init()  {
+func init() {
 	log = Log.GetInstance()
 }

@@ -13,8 +13,5 @@ func init() {
 }
 
 func main() {
-	udp.Run()
-	ping := udp.Ping{}
-	ping.Init()
-	udp.MainWaitGroup.Wait()
+	udp.Run(false)
 }

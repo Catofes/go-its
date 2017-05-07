@@ -6,40 +6,43 @@ import (
 	"github.com/op/go-logging"
 	Log "github.com/Catofes/go-its/log"
 	"sync"
+	"strconv"
 )
 
 var log *logging.Logger
-var Server *MainServer
-var MainWaitGroup sync.WaitGroup
+var Server *MainUdpService
+var mainWaitGroup sync.WaitGroup
 
 func init() {
 	log = Log.GetInstance()
 }
 
 type Handler func(*net.UDPConn, *net.UDPAddr, int, []byte)
-type MainServer struct {
+type MainUdpService struct {
 	ListenAddress string
 	ListenPort    int
 	buffer        []byte
 	mutex         sync.Mutex
 	handler       map[byte]Handler
 	connection    *net.UDPConn
+	isServer      bool
 }
 
-func (s *MainServer) loadConfig() {
+func (s *MainUdpService) loadConfig() {
 	c := config.GetInstance("")
 	s.ListenAddress = c.ListenAddress
-	s.ListenPort = c.ListenPort
+	s.ListenPort = int(c.ListenPort)
 }
 
-func (s *MainServer) Init() {
+func (s *MainUdpService) Init() *MainUdpService {
 	s.loadConfig()
 	s.buffer = make([]byte, 1024)
 	s.handler = make(map[byte]Handler, 5)
+	return s
 }
 
-func (s *MainServer) Loop() {
-	address, err := net.ResolveUDPAddr("udp", s.ListenAddress+":"+string(s.ListenPort))
+func (s *MainUdpService) Loop() {
+	address, err := net.ResolveUDPAddr("udp", s.ListenAddress+":"+strconv.Itoa(s.ListenPort))
 	if err != nil {
 		log.Fatal("Can't resolve address: ", err)
 	}
@@ -54,13 +57,13 @@ func (s *MainServer) Loop() {
 	}
 }
 
-func (s *MainServer) handleClient(connection *net.UDPConn) {
+func (s *MainUdpService) handleClient(connection *net.UDPConn) {
 	n, remoteAddress, err := connection.ReadFromUDP(s.buffer)
 	if err != nil {
 		log.Warning("Error read connection. %s", err.Error())
 		return
 	}
-	log.Debug("Get connection from %s, size %d.", remoteAddress.String(), n)
+	//log.Debug("Get connection from %s, size %d.", remoteAddress.String(), n)
 	if n <= 0 {
 		return
 	}
@@ -75,22 +78,24 @@ func (s *MainServer) handleClient(connection *net.UDPConn) {
 	}
 }
 
-func (s *MainServer) AddHandler(package_type byte, handler Handler) {
+func (s *MainUdpService) AddHandler(package_type byte, handler Handler) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	s.handler[package_type] = handler
 }
 
-func (s *MainServer) DeleteHandler(package_type byte) {
+func (s *MainUdpService) DeleteHandler(package_type byte) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	delete(s.handler, package_type)
 }
 
-func Run() {
-	Server = &MainServer{}
-	Server.Init()
+func Run(is_server bool) {
+	Server = (&MainUdpService{}).Init()
+	Server.isServer = is_server
 	Server.AddHandler(byte(0), EchoRequestHandler)
-	MainWaitGroup.Add(1)
+	mainWaitGroup.Add(1)
 	go Server.Loop()
+	(&MainService{}).Init().Loop()
+	mainWaitGroup.Wait()
 }
