@@ -43,6 +43,7 @@ func (s *ICMPStack) Get() *EchoPackage {
 		}
 		s.data.Remove(k)
 	}
+	s.PackageLost = float32(s.ReceivedPackageCount) / float32(s.data.Size()-1)
 	return &echoPackage
 }
 
@@ -78,28 +79,33 @@ type RemoteServer struct {
 	Ip             net.IP
 	Port           uint16
 	LastOnline     time.Time
+	OffLine        bool
 	PackageReceive *ICMPStack
 	ServerInfo     map[string]*ServerInfo
 }
 
 type MainService struct {
-	Servers   map[string]*RemoteServer
-	ip        net.IP
-	pingEvery time.Duration
-	syncEvery time.Duration
-	Mutex     sync.Mutex
+	Servers     map[string]*RemoteServer
+	ip          net.IP
+	pingEvery   time.Duration
+	syncEvery   time.Duration
+	offlineTime time.Duration
+	checkEvery  time.Duration
+	Mutex       sync.Mutex
 }
 
 func (s *MainService) Init() *MainService {
+	c := config.GetInstance("")
 	s.Servers = make(map[string]*RemoteServer)
-	s.pingEvery = 100 * time.Millisecond
-	s.syncEvery = 6 * time.Second
+	s.pingEvery = time.Duration(c.PingEvery) * time.Millisecond
+	s.syncEvery = time.Duration(c.SyncEvery) * time.Millisecond
+	s.offlineTime = time.Duration(c.OfflineTime) * time.Millisecond
+	s.checkEvery = time.Duration(c.CheckEvery) * time.Millisecond
 	Server.AddHandler(byte(1), s.echoReplyHandler)
 	Server.AddHandler(byte(2), s.syncHandler)
-	c := config.GetInstance("")
 	if !Server.isServer {
 		Center := RemoteServer{net.ParseIP(c.CenterServerAddress), c.CenterServerPort, time.Time{},
-							   (&ICMPStack{}).Init(), make(map[string]*ServerInfo)}
+							   false, (&ICMPStack{}).Init(), make(map[string]*ServerInfo)}
 		s.Servers[c.CenterServerAddress] = &Center
 	} else {
 		s.ip = net.ParseIP(c.CenterServerAddress)
@@ -110,6 +116,9 @@ func (s *MainService) Init() *MainService {
 func (s *MainService) Loop() {
 	go s.pingLoop()
 	go s.syncLoop()
+	if Server.isServer {
+		go s.checkLoop()
+	}
 }
 
 func (s *MainService) pingLoop() {
@@ -124,7 +133,6 @@ func (s *MainService) pingLoop() {
 			address := &net.UDPAddr{}
 			address.IP = v.Ip
 			address.Port = int(v.Port)
-			//log.Debug("Send ping to address: %s.", address.String())
 			Server.connection.WriteToUDP(echoPackage.ToData(), address)
 		}
 		s.Mutex.Unlock()
@@ -148,11 +156,41 @@ func (s *MainService) syncLoop() {
 		for _, v := range s.Servers {
 			log.Debug("Server %s, LastOnline %s, Latency %d, PackageLost %f",
 				v.Ip.String(), v.LastOnline.String(), v.PackageReceive.Latency, v.PackageReceive.PackageLost)
-			for _, vv := range v.ServerInfo {
+			for _, w := range v.ServerInfo {
 				log.Debug("	SubServer %s, LastOnline %s, Latency %d, PackageLost %f",
-					vv.Ip.String(), time.Unix(int64(vv.LastOnline)/1e9, int64(vv.Latency)%1e9),
-					vv.Latency, vv.PackageLost)
+					w.Ip.String(), time.Unix(int64(w.LastOnline)/1e9, int64(w.LastOnline)%1e9),
+					w.Latency, w.PackageLost)
 			}
+		}
+		s.Mutex.Unlock()
+	}
+}
+
+func (s *MainService) checkLoop() {
+	for {
+		time.Sleep(s.checkEvery)
+		s.Mutex.Lock()
+		linkDown := 0
+		for _, v := range s.Servers {
+			if v.LastOnline.Add(s.offlineTime).Before(time.Now()) {
+				v.OffLine = true
+				for _, w := range v.ServerInfo {
+					t := time.Unix(int64(w.LastOnline)/1e9, int64(w.LastOnline)%1e9)
+					if t.Add(s.offlineTime).Before(time.Now()) {
+						v.OffLine = false
+						linkDown++
+						break
+					}
+				}
+			} else {
+				v.OffLine = false
+			}
+			if v.OffLine == true {
+				log.Info("Server %s offline.", v.Ip.String())
+			}
+		}
+		if linkDown > 0 {
+			log.Warning("%d/%d Link Down!", linkDown, len(s.Servers))
 		}
 		s.Mutex.Unlock()
 	}
@@ -164,6 +202,9 @@ func (s *MainService) syncTo(remoteServer *RemoteServer) {
 	p.Self.Port = remoteServer.Port
 	p.Token = config.GetInstance("").Token
 	for _, v := range s.Servers {
+		if v.OffLine {
+			continue
+		}
 		p.Servers.Push(&ServerInfo{v.Ip, v.Port,
 								   uint64(v.PackageReceive.Latency),
 								   v.PackageReceive.PackageLost,
@@ -222,7 +263,7 @@ func (s *MainService) syncHandler(conn *net.UDPConn, addr *net.UDPAddr, n int, d
 			}
 		} else {
 			s.Servers[addr.IP.String()] = &RemoteServer{
-				addr.IP, uint16(addr.Port), time.Now(),
+				addr.IP, uint16(addr.Port), time.Now(), false,
 				(&ICMPStack{}).Init(), make(map[string]*ServerInfo)}
 		}
 
@@ -243,7 +284,7 @@ func (s *MainService) syncHandler(conn *net.UDPConn, addr *net.UDPAddr, n int, d
 			if !alreadyIn {
 				log.Debug("Add reomte server %s", serverInfo.Ip.String())
 				s.Servers[serverInfo.Ip.String()] = &RemoteServer{
-					serverInfo.Ip, serverInfo.Port, time.Time{},
+					serverInfo.Ip, serverInfo.Port, time.Time{}, false,
 					(&ICMPStack{}).Init(), make(map[string]*ServerInfo)}
 			}
 

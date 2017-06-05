@@ -16,6 +16,11 @@ type MainConfig struct {
 	CenterServerAddress string
 	CenterServerPort    uint16
 	Token               uint64
+	PingEvery           uint64
+	SyncEvery           uint64
+	CheckEvery          uint64
+	OfflineTime         uint64
+	Account             []interface{}
 }
 
 func (s *MainConfig) Load(file_path string) {
@@ -27,6 +32,18 @@ func (s *MainConfig) Load(file_path string) {
 	err = decoder.Decode(s)
 	if err != nil {
 		log.Fatal("Decode config file failed.", err)
+	}
+	if s.PingEvery <= 0 {
+		s.PingEvery = 1000
+	}
+	if s.SyncEvery <= 0 {
+		s.SyncEvery = 6000
+	}
+	if s.CheckEvery <= 0 {
+		s.CheckEvery = 6000
+	}
+	if s.OfflineTime <= 0 {
+		s.OfflineTime = 30000
 	}
 }
 
