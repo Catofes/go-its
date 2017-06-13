@@ -14,7 +14,7 @@ func GetInstance() *logging.Logger {
 		instance = logging.MustGetLogger("example")
 		backend := logging.NewLogBackend(os.Stdout, "", 0)
 		format := logging.MustStringFormatter(
-			`%{color}%{time:15:04:05.000} %{shortfunc} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}`,
+			`%{color}%{time:0102 15:04:05.000} %{shortfunc} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}`,
 		)
 		backendFormatter := logging.NewBackendFormatter(backend, format)
 		logging.SetBackend(backendFormatter)

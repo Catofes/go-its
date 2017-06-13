@@ -4,3 +4,6 @@ import:
   version: ^1.9.0
 - package: github.com/op/go-logging
   version: ^1.0.0
+- package: golang.org/x/text
+  subpackages:
+  - encoding

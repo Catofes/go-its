@@ -7,7 +7,7 @@ import (
 )
 
 func init() {
-	configPath := flag.String("conf", "./server.json", "Path to config file.")
+	configPath := flag.String("conf", "./test.json", "Path to config file.")
 	flag.Parse()
 	config.GetInstance(*configPath)
 }

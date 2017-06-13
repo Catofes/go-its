@@ -21,6 +21,7 @@ type MainConfig struct {
 	CheckEvery          uint64
 	OfflineTime         uint64
 	Account             []interface{}
+	ItsUrl				string
 }
 
 func (s *MainConfig) Load(file_path string) {

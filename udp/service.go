@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 	"github.com/Catofes/go-its/config"
+	"github.com/Catofes/go-its/its"
 )
 
 type ICMPStack struct {
@@ -80,8 +81,20 @@ type RemoteServer struct {
 	Port           uint16
 	LastOnline     time.Time
 	OffLine        bool
+	LinkDown       bool
 	PackageReceive *ICMPStack
 	ServerInfo     map[string]*ServerInfo
+}
+
+func (s *RemoteServer) Init(ip net.IP, port uint16) *RemoteServer {
+	s.Ip = ip
+	s.Port = port
+	s.LastOnline = time.Time{}
+	s.LinkDown = false
+	s.OffLine = false
+	s.PackageReceive = (&ICMPStack{}).Init()
+	s.ServerInfo = make(map[string]*ServerInfo)
+	return s
 }
 
 type MainService struct {
@@ -104,9 +117,8 @@ func (s *MainService) Init() *MainService {
 	Server.AddHandler(byte(1), s.echoReplyHandler)
 	Server.AddHandler(byte(2), s.syncHandler)
 	if !Server.isServer {
-		Center := RemoteServer{net.ParseIP(c.CenterServerAddress), c.CenterServerPort, time.Time{},
-							   false, (&ICMPStack{}).Init(), make(map[string]*ServerInfo)}
-		s.Servers[c.CenterServerAddress] = &Center
+		Center := (&RemoteServer{}).Init(net.ParseIP(c.CenterServerAddress), c.CenterServerPort)
+		s.Servers[c.CenterServerAddress] = Center
 	} else {
 		s.ip = net.ParseIP(c.CenterServerAddress)
 	}
@@ -117,6 +129,8 @@ func (s *MainService) Loop() {
 	go s.pingLoop()
 	go s.syncLoop()
 	if Server.isServer {
+		(&its.Manager{}).Init()
+		go its.ItsManager.Loop()
 		go s.checkLoop()
 	}
 }
@@ -171,22 +185,46 @@ func (s *MainService) checkLoop() {
 		time.Sleep(s.checkEvery)
 		s.Mutex.Lock()
 		linkDown := 0
+		//for _, v := range s.Servers {
+		//	if v.LastOnline.Add(s.offlineTime).Before(time.Now()) {
+		//		v.OffLine = true
+		//		for _, w := range v.ServerInfo {
+		//			t := time.Unix(int64(w.LastOnline)/1e9, int64(w.LastOnline)%1e9)
+		//			if t.Add(s.offlineTime).Before(time.Now()) {
+		//				v.OffLine = false
+		//				linkDown++
+		//				break
+		//			}
+		//		}
+		//	} else {
+		//		v.OffLine = false
+		//	}
+		//	if v.OffLine == true {
+		//		log.Info("Server %s offline.", v.Ip.String())
+		//	}
+		//}
 		for _, v := range s.Servers {
+			//Time out
 			if v.LastOnline.Add(s.offlineTime).Before(time.Now()) {
-				v.OffLine = true
-				for _, w := range v.ServerInfo {
-					t := time.Unix(int64(w.LastOnline)/1e9, int64(w.LastOnline)%1e9)
-					if t.Add(s.offlineTime).Before(time.Now()) {
-						v.OffLine = false
-						linkDown++
-						break
+				timeout_count := 0
+				total_server := len(s.Servers)
+				for _, u := range s.Servers {
+					if u.Ip.Equal(v.Ip) {
+						continue
 					}
+					t_ := u.ServerInfo[v.Ip.String()].LastOnline
+					t := time.Unix(int64(t_)/1e9, int64(t_)%1e9)
+					if t.Add(s.offlineTime).Before(time.Now()) {
+						timeout_count++
+					}
+				}
+				if float64(timeout_count)/float64(total_server) > 0.6 {
+					v.OffLine = true
+				} else {
+					v.LinkDown = true
 				}
 			} else {
 				v.OffLine = false
-			}
-			if v.OffLine == true {
-				log.Info("Server %s offline.", v.Ip.String())
 			}
 		}
 		if linkDown > 0 {
@@ -262,9 +300,7 @@ func (s *MainService) syncHandler(conn *net.UDPConn, addr *net.UDPAddr, n int, d
 				remoteServer.ServerInfo[serverInfo.Ip.String()] = serverInfo
 			}
 		} else {
-			s.Servers[addr.IP.String()] = &RemoteServer{
-				addr.IP, uint16(addr.Port), time.Now(), false,
-				(&ICMPStack{}).Init(), make(map[string]*ServerInfo)}
+			s.Servers[addr.IP.String()] = (&RemoteServer{}).Init(addr.IP, uint16(addr.Port))
 		}
 
 	} else {
@@ -283,9 +319,7 @@ func (s *MainService) syncHandler(conn *net.UDPConn, addr *net.UDPAddr, n int, d
 			_, alreadyIn := s.Servers[serverInfo.Ip.String()]
 			if !alreadyIn {
 				log.Debug("Add reomte server %s", serverInfo.Ip.String())
-				s.Servers[serverInfo.Ip.String()] = &RemoteServer{
-					serverInfo.Ip, serverInfo.Port, time.Time{}, false,
-					(&ICMPStack{}).Init(), make(map[string]*ServerInfo)}
+				s.Servers[serverInfo.Ip.String()] = (&RemoteServer{}).Init(serverInfo.Ip, serverInfo.Port)
 			}
 
 		}
