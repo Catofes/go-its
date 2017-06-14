@@ -185,24 +185,6 @@ func (s *MainService) checkLoop() {
 		time.Sleep(s.checkEvery)
 		s.Mutex.Lock()
 		linkDown := 0
-		//for _, v := range s.Servers {
-		//	if v.LastOnline.Add(s.offlineTime).Before(time.Now()) {
-		//		v.OffLine = true
-		//		for _, w := range v.ServerInfo {
-		//			t := time.Unix(int64(w.LastOnline)/1e9, int64(w.LastOnline)%1e9)
-		//			if t.Add(s.offlineTime).Before(time.Now()) {
-		//				v.OffLine = false
-		//				linkDown++
-		//				break
-		//			}
-		//		}
-		//	} else {
-		//		v.OffLine = false
-		//	}
-		//	if v.OffLine == true {
-		//		log.Info("Server %s offline.", v.Ip.String())
-		//	}
-		//}
 		for _, v := range s.Servers {
 			//Time out
 			if v.LastOnline.Add(s.offlineTime).Before(time.Now()) {
@@ -222,6 +204,7 @@ func (s *MainService) checkLoop() {
 					v.OffLine = true
 				} else {
 					v.LinkDown = true
+					linkDown++
 				}
 			} else {
 				v.OffLine = false
