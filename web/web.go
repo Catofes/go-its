@@ -1,7 +1,8 @@
 package web
 
 import (
-	"github.com/kataras/iris"
+	"gopkg.in/kataras/iris.v6"
+	"gopkg.in/kataras/iris.v6/adaptors/httprouter"
 	"github.com/Catofes/go-its/its"
 	"github.com/Catofes/go-its/config"
 )
@@ -15,6 +16,7 @@ type Server struct {
 
 func (s *Server) Init() *Server {
 	s.app = iris.New()
+	s.app.Adapt(httprouter.New())
 	s.address = config.GetInstance("").WebServerAddress
 	s.bind()
 	return s

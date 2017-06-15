@@ -37,19 +37,19 @@ func (s *MainConfig) Load(file_path string) {
 		log.Fatal("Decode config file failed.", err)
 	}
 	if s.PingEvery <= 0 {
-		s.PingEvery = 1000
+		s.PingEvery = 500
 	}
 	if s.SyncEvery <= 0 {
-		s.SyncEvery = 6000
+		s.SyncEvery = 2000
 	}
 	if s.CheckEvery <= 0 {
-		s.CheckEvery = 6000
+		s.CheckEvery = 3000
 	}
 	if s.OfflineTime <= 0 {
-		s.OfflineTime = 15000
+		s.OfflineTime = 5000
 	}
 	if s.DeleteEvery <= s.OfflineTime {
-		s.DeleteEvery = 7 * 24 * 3600 * 1000
+		s.DeleteEvery = 24 * 3600 * 1000
 	}
 }
 

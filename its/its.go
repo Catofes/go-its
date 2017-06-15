@@ -85,15 +85,15 @@ func (s *AccountInfo) Disconnect() error {
 }
 
 type Manager struct {
-	Accounts              *arraylist.List
-	Status                bool
-	LastText              string
-	LastConnectTime       time.Time
-	LastCheckTime         time.Time
-	LostCount             int
-	LostLimit             int
-	Day                   int
-	mutex                 sync.Mutex
+	Accounts        *arraylist.List
+	Status          bool
+	LastText        string
+	LastConnectTime time.Time
+	LastCheckTime   time.Time
+	LostCount       int
+	LostLimit       int
+	Day             int
+	mutex           sync.Mutex
 }
 
 func (s *Manager) Init() *Manager {
@@ -113,6 +113,7 @@ func (s *Manager) Init() *Manager {
 func (s *Manager) LinkDown() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+	log.Warning("LinkDown. Connection info: count/limit %d/%d.", s.LostCount, s.LostLimit)
 	s.LostCount++
 	s.Status = false
 	if s.LostCount > s.LostLimit {

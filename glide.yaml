@@ -1,4 +1,4 @@
-package: .
+package: github.com/Catofes/go-its
 import:
 - package: github.com/emirpasic/gods
   version: ^1.9.0
@@ -7,5 +7,5 @@ import:
 - package: golang.org/x/text
   subpackages:
   - encoding
-- package: github.com/kataras/iris
+- package: gopkg.in/kataras/iris.v6
   version: ^6.2.0

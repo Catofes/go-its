@@ -45,7 +45,7 @@ func (s *ICMPStack) Get() *EchoPackage {
 		}
 		s.data.Remove(k)
 	}
-	s.PackageLost = float32(s.ReceivedPackageCount) / float32(s.data.Size()-1)
+	s.PackageLost = 1 - float32(s.ReceivedPackageCount)/float32(s.data.Size()-1)
 	return &echoPackage
 }
 
@@ -74,7 +74,7 @@ func (s *ICMPStack) Put(reply *EchoPackage) {
 		}
 		s.data.Remove(k)
 	}
-	s.PackageLost = float32(s.ReceivedPackageCount) / float32(s.data.Size())
+	s.PackageLost = 1 - float32(s.ReceivedPackageCount)/float32(s.data.Size())
 }
 
 type RemoteServer struct {
@@ -131,6 +131,7 @@ func (s *MainService) Init() *MainService {
 func (s *MainService) Loop() {
 	go s.pingLoop()
 	go s.syncLoop()
+	go s.deleteLoop()
 	if Server.isServer {
 		(&its.Manager{}).Init()
 		go (&web.Server{}).Init().Run()
@@ -192,18 +193,25 @@ func (s *MainService) checkLoop() {
 		offLine := 0
 		checkResult := false
 		for _, v := range s.Servers {
+			if v.LastOnline.Equal(time.Time{}) {
+				continue
+			}
 			//Time out
 			if v.LastOnline.Add(2 * s.offlineTime).Before(time.Now()) {
 				timeout_count := 0
-				total_server := len(s.Servers)
+				total_server := 0
 				for _, u := range s.Servers {
 					if u.Ip.Equal(v.Ip) {
 						continue
 					}
-					t_ := u.ServerInfo[v.Ip.String()].LastOnline
-					t := time.Unix(int64(t_)/1e9, int64(t_)%1e9)
-					if t.Add(s.offlineTime).Before(time.Now()) {
-						timeout_count++
+					remote_server, ok := u.ServerInfo[v.Ip.String()]
+					if ok {
+						t_ := remote_server.LastOnline
+						t := time.Unix(int64(t_)/1e9, int64(t_)%1e9)
+						if t.Add(s.offlineTime).Before(time.Now()) {
+							timeout_count++
+						}
+						total_server++
 					}
 				}
 				if float64(timeout_count)/float64(total_server) > 0.6 {
@@ -217,8 +225,9 @@ func (s *MainService) checkLoop() {
 				v.OffLine = false
 			}
 		}
+		log.Debug("Check Result: Offline/LinkDown: %d/%d", offLine, linkDown)
 		if float64(offLine)/float64(len(s.Servers)) > 0.6 {
-			log.Warning("%s/%s OffLine!", offLine, len(s.Servers))
+			log.Warning("%d/%d OffLine!", offLine, len(s.Servers))
 			checkResult = true
 		}
 		if linkDown > 0 {
@@ -230,8 +239,17 @@ func (s *MainService) checkLoop() {
 		} else {
 			its.ItsManager.LinkUp()
 		}
+		s.Mutex.Unlock()
+	}
+}
+
+func (s *MainService) deleteLoop() {
+	for {
+		time.Sleep(100 * s.checkEvery)
+		s.Mutex.Lock()
 		for k, v := range s.Servers {
 			if v.LastOnline.Add(s.deleteEvery).Before(time.Now()) {
+				log.Warning("Delete server %s.", )
 				delete(s.Servers, k)
 			}
 		}
@@ -323,7 +341,7 @@ func (s *MainService) syncHandler(conn *net.UDPConn, addr *net.UDPAddr, n int, d
 			}
 			_, alreadyIn := s.Servers[serverInfo.Ip.String()]
 			if !alreadyIn {
-				log.Debug("Add reomte server %s", serverInfo.Ip.String())
+				log.Warning("Add reomte server %s", serverInfo.Ip.String())
 				s.Servers[serverInfo.Ip.String()] = (&RemoteServer{}).Init(serverInfo.Ip, serverInfo.Port)
 			}
 

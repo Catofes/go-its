@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
+	"math"
 )
 
 const ServerInfoLength = 26
@@ -43,7 +44,7 @@ func (s *SyncPackage) ToData() (all_data map[int][]byte, n int) {
 				copy(data[start:start+4], server.Ip.To4())
 				binary.BigEndian.PutUint16(data[start+4:start+6], server.Port)
 				binary.BigEndian.PutUint64(data[start+6:start+14], server.Latency)
-				binary.BigEndian.PutUint32(data[start+14:start+18], uint32(server.PackageLost))
+				binary.BigEndian.PutUint32(data[start+14:start+18], math.Float32bits(server.PackageLost))
 				binary.BigEndian.PutUint64(data[start+18:start+26], server.LastOnline)
 				i++
 			} else {
@@ -79,7 +80,7 @@ func (s *SyncPackage) LoadFromData(data []byte, n int) error {
 		server := ServerInfo{make(net.IP, 4),
 							 binary.BigEndian.Uint16(data[start+4:start+6]),
 							 binary.BigEndian.Uint64(data[start+6:start+14]),
-							 float32(binary.BigEndian.Uint32(data[start+14:start+18])),
+							 math.Float32frombits(binary.BigEndian.Uint32(data[start+14:start+18])),
 							 binary.BigEndian.Uint64(data[start+18:start+26])}
 		copy(server.Ip, data[start:start+4])
 		s.Servers.Push(&server)
