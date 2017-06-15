@@ -7,6 +7,7 @@ import (
 	"time"
 	"github.com/Catofes/go-its/config"
 	"github.com/Catofes/go-its/its"
+	"github.com/Catofes/go-its/web"
 )
 
 type ICMPStack struct {
@@ -104,6 +105,7 @@ type MainService struct {
 	syncEvery   time.Duration
 	offlineTime time.Duration
 	checkEvery  time.Duration
+	deleteEvery time.Duration
 	Mutex       sync.Mutex
 }
 
@@ -114,6 +116,7 @@ func (s *MainService) Init() *MainService {
 	s.syncEvery = time.Duration(c.SyncEvery) * time.Millisecond
 	s.offlineTime = time.Duration(c.OfflineTime) * time.Millisecond
 	s.checkEvery = time.Duration(c.CheckEvery) * time.Millisecond
+	s.deleteEvery = time.Duration(c.DeleteEvery) * time.Millisecond
 	Server.AddHandler(byte(1), s.echoReplyHandler)
 	Server.AddHandler(byte(2), s.syncHandler)
 	if !Server.isServer {
@@ -130,6 +133,7 @@ func (s *MainService) Loop() {
 	go s.syncLoop()
 	if Server.isServer {
 		(&its.Manager{}).Init()
+		go (&web.Server{}).Init().Run()
 		go its.ItsManager.Loop()
 		go s.checkLoop()
 	}
@@ -185,9 +189,11 @@ func (s *MainService) checkLoop() {
 		time.Sleep(s.checkEvery)
 		s.Mutex.Lock()
 		linkDown := 0
+		offLine := 0
+		checkResult := false
 		for _, v := range s.Servers {
 			//Time out
-			if v.LastOnline.Add(s.offlineTime).Before(time.Now()) {
+			if v.LastOnline.Add(2 * s.offlineTime).Before(time.Now()) {
 				timeout_count := 0
 				total_server := len(s.Servers)
 				for _, u := range s.Servers {
@@ -202,6 +208,7 @@ func (s *MainService) checkLoop() {
 				}
 				if float64(timeout_count)/float64(total_server) > 0.6 {
 					v.OffLine = true
+					offLine++
 				} else {
 					v.LinkDown = true
 					linkDown++
@@ -210,8 +217,23 @@ func (s *MainService) checkLoop() {
 				v.OffLine = false
 			}
 		}
+		if float64(offLine)/float64(len(s.Servers)) > 0.6 {
+			log.Warning("%s/%s OffLine!", offLine, len(s.Servers))
+			checkResult = true
+		}
 		if linkDown > 0 {
 			log.Warning("%d/%d Link Down!", linkDown, len(s.Servers))
+			checkResult = true
+		}
+		if checkResult {
+			its.ItsManager.LinkDown()
+		} else {
+			its.ItsManager.LinkUp()
+		}
+		for k, v := range s.Servers {
+			if v.LastOnline.Add(s.deleteEvery).Before(time.Now()) {
+				delete(s.Servers, k)
+			}
 		}
 		s.Mutex.Unlock()
 	}

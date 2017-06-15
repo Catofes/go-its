@@ -1,12 +1,6 @@
-hash: 6a8de3527eafcbd0eca38953cfbd652c589a72e94e107701a0fd1ce3c480149a
-updated: 2017-06-13T13:34:35.721641869+08:00
+hash: 930c66a898503674edf01ce8a1662fe5a0449456e7e4b796198266e2e7045c1a
+updated: 2017-06-15T11:06:29.96179595+08:00
 imports:
-- name: github.com/Catofes/go-its
-  version: cc23c68359cd4b4704e9b929e9bd145470181beb
-  subpackages:
-  - config
-  - log
-  - udp
 - name: github.com/emirpasic/gods
   version: f6c17b524822278a87e3b3bd809fec33b51f5b46
   subpackages:
@@ -15,16 +9,21 @@ imports:
   - lists/arraylist
   - maps
   - maps/treemap
-  - sets
   - stacks
   - stacks/arraystack
   - trees
   - trees/redblacktree
   - utils
+- name: github.com/kataras/iris
+  version: 09a2066268f99fc8ee40ecddde8b415f76250f4b
 - name: github.com/op/go-logging
   version: b2cb9fa56473e98db8caba80237377e83fe44db5
 - name: golang.org/x/text
-  version: 210eee5cf7323015d097341bcf7166130d001cd8
+  version: 3491b61b9edc56653ad4333e605e2908e46a036b
   subpackages:
   - encoding
+  - encoding/internal
+  - encoding/internal/identifier
+  - encoding/simplifiedchinese
+  - transform
 testImports: []

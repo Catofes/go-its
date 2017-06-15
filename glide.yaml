@@ -7,3 +7,5 @@ import:
 - package: golang.org/x/text
   subpackages:
   - encoding
+- package: github.com/kataras/iris
+  version: ^6.2.0

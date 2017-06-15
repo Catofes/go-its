@@ -15,13 +15,15 @@ type MainConfig struct {
 	ListenPort          uint16
 	CenterServerAddress string
 	CenterServerPort    uint16
+	WebServerAddress    string
 	Token               uint64
 	PingEvery           uint64
 	SyncEvery           uint64
 	CheckEvery          uint64
+	DeleteEvery         uint64
 	OfflineTime         uint64
 	Account             []interface{}
-	ItsUrl				string
+	ItsUrl              string
 }
 
 func (s *MainConfig) Load(file_path string) {
@@ -44,7 +46,10 @@ func (s *MainConfig) Load(file_path string) {
 		s.CheckEvery = 6000
 	}
 	if s.OfflineTime <= 0 {
-		s.OfflineTime = 30000
+		s.OfflineTime = 15000
+	}
+	if s.DeleteEvery <= s.OfflineTime {
+		s.DeleteEvery = 7 * 24 * 3600 * 1000
 	}
 }
 

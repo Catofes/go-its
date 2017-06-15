@@ -86,9 +86,10 @@ func (s *AccountInfo) Disconnect() error {
 
 type Manager struct {
 	Accounts              *arraylist.List
+	Status                bool
 	LastText              string
 	LastConnectTime       time.Time
-	ConnectionFailedCount int
+	LastCheckTime         time.Time
 	LostCount             int
 	LostLimit             int
 	Day                   int
@@ -113,6 +114,7 @@ func (s *Manager) LinkDown() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	s.LostCount++
+	s.Status = false
 	if s.LostCount > s.LostLimit {
 		s.LostCount = 0
 		if s.LostLimit > 64 {
@@ -135,6 +137,8 @@ func (s *Manager) LinkUp() {
 	defer s.mutex.Unlock()
 	s.LostCount = 0
 	s.LostLimit = s.LostLimit/2 + 1
+	s.Status = true
+	s.LastCheckTime = time.Now()
 }
 
 func (s *Manager) Connect() {
@@ -146,7 +150,10 @@ func (s *Manager) Connect() {
 		}
 	}
 	if account != nil {
-		account.Connect()
+		_, err := account.Connect()
+		if err == nil {
+			s.LastConnectTime = time.Now()
+		}
 	}
 }
 
