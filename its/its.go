@@ -148,6 +148,7 @@ func (s *Manager) Connect() {
 		v, _ := s.Accounts.Get(i)
 		if !v.(*AccountInfo).ConnectLimit {
 			account = v.(*AccountInfo)
+			break
 		}
 	}
 	if account != nil {
