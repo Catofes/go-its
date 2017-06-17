@@ -46,7 +46,7 @@ func (s *AccountInfo) Connect() (string, error) {
 		"operation": {"connect"},
 		"timeout":   {"1"}})
 	if err != nil {
-		log.Warning("Request connection %s failed.", s.AccountName)
+		log.Warning("Request connection %s failed. Err: %s.", s.AccountName, err.Error())
 		return "", errors.New("Requset Connection Failed.")
 	}
 	defer resp.Body.Close()
@@ -129,7 +129,7 @@ func (s *Manager) LinkDown() {
 		if s.LostLimit >= 256 {
 			s.LostLimit = 256
 		}
-		s.Connect()
+		s.connect()
 	}
 }
 
@@ -143,6 +143,12 @@ func (s *Manager) LinkUp() {
 }
 
 func (s *Manager) Connect() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.connect()
+}
+
+func (s *Manager) connect() {
 	var account *AccountInfo = nil
 	for i := 0; i < s.Accounts.Size(); i++ {
 		v, _ := s.Accounts.Get(i)
@@ -152,9 +158,10 @@ func (s *Manager) Connect() {
 		}
 	}
 	if account != nil {
-		_, err := account.Connect()
+		str, err := account.Connect()
 		if err == nil {
 			s.LastConnectTime = time.Now()
+			s.LastText = str
 		}
 	}
 }

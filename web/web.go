@@ -28,6 +28,7 @@ func (s *Server) Run() {
 
 func (s *Server) bind() {
 	s.app.Get("/", s.get_status)
+	s.app.Post("/", s.connect)
 }
 
 func (s *Server) get_status(ctx *iris.Context) {
@@ -39,4 +40,9 @@ func (s *Server) get_status(ctx *iris.Context) {
 	response["lost_count"] = its.ItsManager.LostCount
 	response["lost_limit"] = its.ItsManager.LostLimit
 	ctx.JSON(iris.StatusOK, response)
+}
+
+func (s *Server) connect(ctx *iris.Context) {
+	its.ItsManager.Connect()
+	ctx.SetStatusCode(200)
 }
