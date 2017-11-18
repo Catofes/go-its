@@ -7,7 +7,6 @@ import (
 	"time"
 	"github.com/Catofes/go-its/config"
 	"github.com/Catofes/go-its/its"
-	"github.com/Catofes/go-its/web"
 )
 
 type ICMPStack struct {
@@ -117,9 +116,9 @@ func (s *MainService) Init() *MainService {
 	s.offlineTime = time.Duration(c.OfflineTime) * time.Millisecond
 	s.checkEvery = time.Duration(c.CheckEvery) * time.Millisecond
 	s.deleteEvery = time.Duration(c.DeleteEvery) * time.Millisecond
-	Server.AddHandler(byte(1), s.echoReplyHandler)
-	Server.AddHandler(byte(2), s.syncHandler)
-	if !Server.isServer {
+	udpService.AddHandler(byte(1), s.echoReplyHandler)
+	udpService.AddHandler(byte(2), s.syncHandler)
+	if !udpService.isServer {
 		Center := (&RemoteServer{}).Init(net.ParseIP(c.CenterServerAddress), c.CenterServerPort)
 		s.Servers[c.CenterServerAddress] = Center
 	} else {
@@ -132,9 +131,9 @@ func (s *MainService) Loop() {
 	go s.pingLoop()
 	go s.syncLoop()
 	go s.deleteLoop()
-	if Server.isServer {
+	if udpService.isServer {
 		(&its.Manager{}).Init()
-		go (&web.Server{}).Init().Run()
+		go (&WebServer{}).Init().Run()
 		go its.ItsManager.Loop()
 		go s.checkLoop()
 	}
@@ -152,7 +151,7 @@ func (s *MainService) pingLoop() {
 			address := &net.UDPAddr{}
 			address.IP = v.Ip
 			address.Port = int(v.Port)
-			Server.connection.WriteToUDP(echoPackage.ToData(), address)
+			udpService.connection.WriteToUDP(echoPackage.ToData(), address)
 		}
 		s.Mutex.Unlock()
 	}
@@ -162,7 +161,7 @@ func (s *MainService) syncLoop() {
 	for {
 		time.Sleep(s.syncEvery)
 		s.Mutex.Lock()
-		if Server.isServer {
+		if udpService.isServer {
 			for _, v := range s.Servers {
 				s.syncTo(v)
 			}
@@ -173,7 +172,7 @@ func (s *MainService) syncLoop() {
 			}
 		}
 		for _, v := range s.Servers {
-			log.Debug("Server %s, LastOnline %s, Latency %d, PackageLost %f",
+			log.Debug("udpService %s, LastOnline %s, Latency %d, PackageLost %f",
 				v.Ip.String(), v.LastOnline.String(), v.PackageReceive.Latency, v.PackageReceive.PackageLost)
 			for _, w := range v.ServerInfo {
 				log.Debug("	SubServer %s, LastOnline %s, Latency %d, PackageLost %f",
@@ -198,23 +197,23 @@ func (s *MainService) checkLoop() {
 			}
 			//Time out
 			if v.LastOnline.Add(2 * s.offlineTime).Before(time.Now()) {
-				timeout_count := 0
-				total_server := 0
+				timeoutCount := 0
+				totalServer := 0
 				for _, u := range s.Servers {
 					if u.Ip.Equal(v.Ip) {
 						continue
 					}
-					remote_server, ok := u.ServerInfo[v.Ip.String()]
+					remoteServer, ok := u.ServerInfo[v.Ip.String()]
 					if ok {
-						t_ := remote_server.LastOnline
+						t_ := remoteServer.LastOnline
 						t := time.Unix(int64(t_)/1e9, int64(t_)%1e9)
 						if t.Add(s.offlineTime).Before(time.Now()) {
-							timeout_count++
+							timeoutCount++
 						}
-						total_server++
+						totalServer++
 					}
 				}
-				if float64(timeout_count)/float64(total_server) > 0.6 {
+				if float64(timeoutCount)/float64(totalServer) > 0.6 {
 					v.OffLine = true
 					offLine++
 				} else {
@@ -276,7 +275,7 @@ func (s *MainService) syncTo(remoteServer *RemoteServer) {
 	address.IP = remoteServer.Ip
 	address.Port = int(remoteServer.Port)
 	for i := 0; i < n; i++ {
-		Server.connection.WriteToUDP(d[i], address)
+		udpService.connection.WriteToUDP(d[i], address)
 	}
 }
 
@@ -308,7 +307,7 @@ func (s *MainService) syncHandler(conn *net.UDPConn, addr *net.UDPAddr, n int, d
 		log.Debug("Receive wrong token package.")
 		return
 	}
-	if Server.isServer {
+	if udpService.isServer {
 		remoteServer, alreadyIn := s.Servers[addr.IP.String()]
 		if alreadyIn {
 			for {

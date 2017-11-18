@@ -10,15 +10,15 @@ import (
 )
 
 var log *logging.Logger
-var Server *MainUdpService
+var udpService *UdpService
 var mainWaitGroup sync.WaitGroup
-
+var service *MainService
 func init() {
 	log = Log.GetInstance()
 }
 
 type Handler func(*net.UDPConn, *net.UDPAddr, int, []byte)
-type MainUdpService struct {
+type UdpService struct {
 	ListenAddress string
 	ListenPort    int
 	buffer        []byte
@@ -28,20 +28,20 @@ type MainUdpService struct {
 	isServer      bool
 }
 
-func (s *MainUdpService) loadConfig() {
+func (s *UdpService) loadConfig() {
 	c := config.GetInstance("")
 	s.ListenAddress = c.ListenAddress
 	s.ListenPort = int(c.ListenPort)
 }
 
-func (s *MainUdpService) Init() *MainUdpService {
+func (s *UdpService) Init() *UdpService {
 	s.loadConfig()
 	s.buffer = make([]byte, 1024)
 	s.handler = make(map[byte]Handler, 5)
 	return s
 }
 
-func (s *MainUdpService) Loop() {
+func (s *UdpService) Loop() {
 	address, err := net.ResolveUDPAddr("udp", s.ListenAddress+":"+strconv.Itoa(s.ListenPort))
 	if err != nil {
 		log.Fatal("Can't resolve address: ", err)
@@ -57,7 +57,7 @@ func (s *MainUdpService) Loop() {
 	}
 }
 
-func (s *MainUdpService) handleClient(connection *net.UDPConn) {
+func (s *UdpService) handleClient(connection *net.UDPConn) {
 	n, remoteAddress, err := connection.ReadFromUDP(s.buffer)
 	if err != nil {
 		log.Warning("Error read connection. %s", err.Error())
@@ -74,28 +74,29 @@ func (s *MainUdpService) handleClient(connection *net.UDPConn) {
 		handler(connection, remoteAddress, n, s.buffer)
 	} else {
 		s.mutex.Unlock()
-		log.Warning("Receive unknow package.")
+		log.Warning("Receive unknown package.")
 	}
 }
 
-func (s *MainUdpService) AddHandler(package_type byte, handler Handler) {
+func (s *UdpService) AddHandler(packageType byte, handler Handler) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	s.handler[package_type] = handler
+	s.handler[packageType] = handler
 }
 
-func (s *MainUdpService) DeleteHandler(package_type byte) {
+func (s *UdpService) DeleteHandler(packageType byte) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	delete(s.handler, package_type)
+	delete(s.handler, packageType)
 }
 
-func Run(is_server bool) {
-	Server = (&MainUdpService{}).Init()
-	Server.isServer = is_server
-	Server.AddHandler(byte(0), EchoRequestHandler)
+func Run(isServer bool) {
+	udpService = (&UdpService{}).Init()
+	udpService.isServer = isServer
+	udpService.AddHandler(byte(0), EchoRequestHandler)
 	mainWaitGroup.Add(1)
-	go Server.Loop()
-	(&MainService{}).Init().Loop()
+	go udpService.Loop()
+	service = (&MainService{}).Init()
+	service.Loop()
 	mainWaitGroup.Wait()
 }

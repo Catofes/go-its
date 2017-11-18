@@ -1,4 +1,4 @@
-package web
+package udp
 
 import (
 	"gopkg.in/kataras/iris.v6"
@@ -7,14 +7,12 @@ import (
 	"github.com/Catofes/go-its/config"
 )
 
-var WebServer *Server
-
-type Server struct {
+type WebServer struct {
 	app     *iris.Framework
 	address string
 }
 
-func (s *Server) Init() *Server {
+func (s *WebServer) Init() *WebServer {
 	s.app = iris.New()
 	s.app.Adapt(httprouter.New())
 	s.address = config.GetInstance("").WebServerAddress
@@ -22,27 +20,28 @@ func (s *Server) Init() *Server {
 	return s
 }
 
-func (s *Server) Run() {
+func (s *WebServer) Run() {
 	s.app.Listen(s.address)
 }
 
-func (s *Server) bind() {
+func (s *WebServer) bind() {
 	s.app.Get("/", s.get_status)
 	s.app.Post("/", s.connect)
 }
 
-func (s *Server) get_status(ctx *iris.Context) {
+func (s *WebServer) get_status(ctx *iris.Context) {
 	response := make(map[string]interface{})
 	response["check_status"] = its.ItsManager.Status
-	response["last_check_time"] = its.ItsManager.LastCheckTime.String()
-	response["last_connect_time"] = its.ItsManager.LastConnectTime.String()
+	response["last_check_time"] = its.ItsManager.LastCheckTime.Format("2006-01-02 15:04:05.999999999 -0700 MST")
+	response["last_connect_time"] = its.ItsManager.LastConnectTime.Format("2006-01-02 15:04:05.999999999 -0700 MST")
 	response["last_connect_response"] = its.ItsManager.LastText
 	response["lost_count"] = its.ItsManager.LostCount
 	response["lost_limit"] = its.ItsManager.LostLimit
+	response["debug"] = service.Servers
 	ctx.JSON(iris.StatusOK, response)
 }
 
-func (s *Server) connect(ctx *iris.Context) {
+func (s *WebServer) connect(ctx *iris.Context) {
 	its.ItsManager.Connect()
 	ctx.SetStatusCode(200)
 }
