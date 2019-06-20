@@ -4,53 +4,36 @@ import (
 	"github.com/Catofes/go-its/config"
 	"net"
 	"github.com/op/go-logging"
-	Log "github.com/Catofes/go-its/log"
 	"sync"
 	"strconv"
 )
 
-var log *logging.Logger
-var udpService *UdpService
-var mainWaitGroup sync.WaitGroup
-var service *MainService
-func init() {
-	log = Log.GetInstance()
-}
+type handler func(*net.UDPConn, *net.UDPAddr, int, []byte)
 
-type Handler func(*net.UDPConn, *net.UDPAddr, int, []byte)
-type UdpService struct {
+type udpService struct {
 	ListenAddress string
 	ListenPort    int
-	buffer        []byte
 	mutex         sync.Mutex
 	handler       map[byte]Handler
 	connection    *net.UDPConn
 	isServer      bool
 }
 
-func (s *UdpService) loadConfig() {
-	c := config.GetInstance("")
-	s.ListenAddress = c.ListenAddress
-	s.ListenPort = int(c.ListenPort)
-}
-
-func (s *UdpService) Init() *UdpService {
-	s.loadConfig()
-	s.buffer = make([]byte, 1024)
-	s.handler = make(map[byte]Handler, 5)
+func (s *udpService) init() *udpService {
+	s.handler = make(map[byte]Handler)
 	return s
 }
 
-func (s *UdpService) Loop() {
+func (s *udpService) listen() {
 	address, err := net.ResolveUDPAddr("udp", s.ListenAddress+":"+strconv.Itoa(s.ListenPort))
 	if err != nil {
 		log.Fatal("Can't resolve address: ", err)
 	}
 	connection, err := net.ListenUDP("udp", address)
-	s.connection = connection
 	if err != nil {
 		log.Fatal("Can't listen udp on", address, err)
 	}
+	s.connection = connection
 	defer s.connection.Close()
 	for {
 		s.handleClient(s.connection)

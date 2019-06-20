@@ -1,8 +1,8 @@
 package udp
 
 import (
-	"gopkg.in/kataras/iris.v6"
-	"gopkg.in/kataras/iris.v6/adaptors/httprouter"
+	"github.com/kataras/iris"
+	"github.com/kataras/iris/adaptors/httprouter"
 	"github.com/Catofes/go-its/its"
 	"github.com/Catofes/go-its/config"
 )

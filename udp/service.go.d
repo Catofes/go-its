@@ -5,7 +5,6 @@ import (
 	"github.com/emirpasic/gods/maps/treemap"
 	"sync"
 	"time"
-	"github.com/Catofes/go-its/config"
 	"github.com/Catofes/go-its/its"
 )
 
