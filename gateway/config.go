@@ -18,10 +18,11 @@ type config struct {
 	Account      []interface{}
 	ItsURL       string
 	GroupFilter  uint64
-	server       bool
+	TestMode     bool
+	IsServer     bool
 }
 
-func (s *config) load(path string)*config {
+func (s *config) load(path string) *config {
 	d, err := ioutil.ReadFile(path)
 	if err != nil {
 		log.Fatal(err)

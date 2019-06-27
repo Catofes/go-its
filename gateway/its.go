@@ -140,6 +140,9 @@ func (s *itsManager) connect() {
 		}
 	}
 	if account != nil {
+		if s.TestMode {
+			return
+		}
 		str, err := account.Connect()
 		if err == nil {
 			s.LastConnectTime = time.Now()
@@ -157,7 +160,7 @@ func (s *itsManager) loop() {
 		now := time.Now()
 		if now.Day() != s.Day {
 			s.Day = now.Day()
-			for _,v := range s.Accounts {
+			for _, v := range s.Accounts {
 				v.ConnectLimit = false
 			}
 		}

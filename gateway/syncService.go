@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+var ss *syncService
+
 type remoteServer struct {
 	config
 	*pingService
@@ -50,6 +52,13 @@ type syncService struct {
 func (s *syncService) init() *syncService {
 	s.servers = make(map[string]*remoteServer)
 	s.mutex = &sync.Mutex{}
+	if !s.IsServer {
+		a, _ := net.ResolveUDPAddr("udp", s.config.CenterServer)
+		s.addServer(serverInfo{
+			Address: a,
+			Group:   0,
+		})
+	}
 	return s
 }
 
@@ -64,6 +73,9 @@ func (s *syncService) run(udp *udpService) {
 func (s *syncService) loop() {
 	go s.sendSyncPackages()
 	go s.deleteServer()
+	if s.IsServer {
+		go s.checkServer()
+	}
 }
 
 func (s *syncService) sendSyncPackages() {
@@ -93,7 +105,7 @@ func (s *syncService) sendSyncPackageTo(address string) {
 	for _, v := range s.servers {
 		if !v.offline {
 			info := serverInfo{
-				Address:          v.pingService.address,
+				Address:     v.pingService.address,
 				Latency:     uint64(v.pingService.latency),
 				PackageLost: v.pingService.packageLost,
 				LastOnline:  uint64(v.lastOnline.UnixNano()),
@@ -143,7 +155,7 @@ func (s *syncService) syncPackageHandler(conn *net.UDPConn, addr *net.UDPAddr, n
 }
 
 func (s *syncService) addServer(p serverInfo) *remoteServer {
-	if p.Group&(^s.config.GroupFilter) == 0 {
+	if p.Group != 0 && (p.Group&(^s.config.GroupFilter) == 0) {
 		log.Info("filter server of %s", p.Address.String())
 		return nil
 	}

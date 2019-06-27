@@ -2,6 +2,8 @@ package gateway
 
 import "net"
 
+var us *udpService
+
 type handler func(*net.UDPConn, *net.UDPAddr, int, []byte)
 
 type service interface {
