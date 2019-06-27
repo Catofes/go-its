@@ -7,7 +7,7 @@ import (
 )
 
 //EchoPackageLength should always be 25
-const pingPackageLength = 26
+const pingPackageLength = 25
 
 //EchoPackage Type 0, ReplyPackage Type 1
 type pingRequestPackage struct {

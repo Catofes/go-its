@@ -21,7 +21,7 @@ type config struct {
 	server       bool
 }
 
-func (s *config) load(path string) {
+func (s *config) load(path string)*config {
 	d, err := ioutil.ReadFile(path)
 	if err != nil {
 		log.Fatal(err)
@@ -32,4 +32,5 @@ func (s *config) load(path string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	return s
 }

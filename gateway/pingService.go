@@ -17,12 +17,14 @@ type pingService struct {
 	cap         int64
 	responseIDs *queue.Queue
 	udp         *udpService
-	mutex       sync.Mutex
+	mutex       *sync.Mutex
 }
 
-func (s *pingService) init() {
+func (s *pingService) init() *pingService {
 	s.cap = 100
 	s.responseIDs = queue.New(2 * s.cap)
+	s.mutex = &sync.Mutex{}
+	return s
 }
 
 func (s *pingService) run(udp *udpService) {
@@ -31,10 +33,12 @@ func (s *pingService) run(udp *udpService) {
 }
 
 func (s *pingService) loop() {
-	for {
-		time.Sleep(s.every)
-		s.sendPingPackage()
-	}
+	go func() {
+		for {
+			time.Sleep(s.every)
+			s.sendPingPackage()
+		}
+	}()
 }
 
 func (s *pingService) sendPingPackage() {

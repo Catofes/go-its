@@ -1,45 +1,33 @@
-package its
+package gateway
 
 import (
-	"time"
-	"sync"
+	"errors"
+	"io/ioutil"
 	"net/http"
 	"net/url"
-	"io/ioutil"
-	"errors"
-	Log "github.com/Catofes/go-its/log"
-	"github.com/op/go-logging"
-	"golang.org/x/text/encoding/simplifiedchinese"
-	"strings"
-	"github.com/Catofes/go-its/config"
-	"github.com/emirpasic/gods/lists/arraylist"
+	"sync"
+	"time"
+
 	"math"
+	"strings"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
-var log *logging.Logger
-var ItsManager *Manager
+var its *itsManager
 
-func init() {
-	log = Log.GetInstance()
-}
-
-type AccountInfo struct {
+type accountInfo struct {
+	config
 	AccountName     string
 	AccountPassword string
 	ConnectLimit    bool
 	mutex           sync.Mutex
 }
 
-func (s *AccountInfo) Init(name string, password string) *AccountInfo {
-	s.AccountName = name
-	s.AccountPassword = password
-	return s
-}
-
-func (s *AccountInfo) Connect() (string, error) {
+func (s *accountInfo) Connect() (string, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	resp, err := http.PostForm(config.GetInstance("").ItsUrl, url.Values{
+	resp, err := http.PostForm(s.config.ItsURL, url.Values{
 		"uid":       {s.AccountName},
 		"password":  {s.AccountPassword},
 		"range":     {"1"},
@@ -47,7 +35,7 @@ func (s *AccountInfo) Connect() (string, error) {
 		"timeout":   {"1"}})
 	if err != nil {
 		log.Warning("Request connection %s failed. Err: %s.", s.AccountName, err.Error())
-		return "", errors.New("Requset Connection Failed.")
+		return "", errors.New("requset connection failed")
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
@@ -58,19 +46,19 @@ func (s *AccountInfo) Connect() (string, error) {
 	if strings.Contains(str, "当前连接数超过预定值") {
 		log.Warning("%s connection over limit.", s.AccountName)
 		s.Disconnect()
-		return "", errors.New("Connection over limit.")
+		return "", errors.New("connection over limit")
 	}
 	if strings.Contains(str, "今天不能再使用客户端") {
 		log.Warning("%s api limit reach.", s.AccountName)
 		s.ConnectLimit = true
-		return "", errors.New("Api limit.")
+		return "", errors.New("api limit")
 	}
 	log.Debug("Connect %s Sent.", s.AccountName)
 	return str, nil
 }
 
-func (s *AccountInfo) Disconnect() error {
-	_, err := http.PostForm(config.GetInstance("").ItsUrl, url.Values{
+func (s *accountInfo) Disconnect() error {
+	_, err := http.PostForm(s.config.ItsURL, url.Values{
 		"uid":       {s.AccountName},
 		"password":  {s.AccountPassword},
 		"range":     {"4"},
@@ -78,14 +66,15 @@ func (s *AccountInfo) Disconnect() error {
 		"timeout":   {"1"}})
 	if err != nil {
 		log.Warning("Request disconnection %s failed.", s.AccountName)
-		return errors.New("Requset Disconnect Failed.")
+		return errors.New("requset disconnect failed")
 	}
 	log.Warning("Disconnect %s sent.", s.AccountName)
 	return nil
 }
 
-type Manager struct {
-	Accounts        *arraylist.List
+type itsManager struct {
+	config
+	Accounts        []*accountInfo
 	Status          bool
 	LastText        string
 	LastConnectTime time.Time
@@ -96,21 +85,19 @@ type Manager struct {
 	mutex           sync.Mutex
 }
 
-func (s *Manager) Init() *Manager {
-	c := config.GetInstance("")
-	s.Accounts = arraylist.New()
+func (s *itsManager) init(c config) *itsManager {
+	s.Accounts = make([]*accountInfo, 0)
 	for _, v := range c.Account {
 		a := v.(map[string]interface{})
 		u := a["Username"].(string)
 		p := a["Password"].(string)
-		s.Accounts.Add((&AccountInfo{}).Init(u, p))
+		s.Accounts = append(s.Accounts, &accountInfo{config: s.config, AccountName: u, AccountPassword: p})
 	}
 	s.LostLimit = 1
-	ItsManager = s
 	return s
 }
 
-func (s *Manager) LinkDown() {
+func (s *itsManager) linkDown() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	log.Warning("LinkDown. Connection info: count/limit %d/%d.", s.LostCount, s.LostLimit)
@@ -133,7 +120,7 @@ func (s *Manager) LinkDown() {
 	}
 }
 
-func (s *Manager) LinkUp() {
+func (s *itsManager) linkUp() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	s.LostCount = 0
@@ -142,18 +129,13 @@ func (s *Manager) LinkUp() {
 	s.LastCheckTime = time.Now()
 }
 
-func (s *Manager) Connect() {
+func (s *itsManager) connect() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	s.connect()
-}
-
-func (s *Manager) connect() {
-	var account *AccountInfo = nil
-	for i := 0; i < s.Accounts.Size(); i++ {
-		v, _ := s.Accounts.Get(i)
-		if !v.(*AccountInfo).ConnectLimit {
-			account = v.(*AccountInfo)
+	var account *accountInfo
+	for _, v := range s.Accounts {
+		if !v.ConnectLimit {
+			account = v
 			break
 		}
 	}
@@ -163,19 +145,20 @@ func (s *Manager) connect() {
 			s.LastConnectTime = time.Now()
 			s.LastText = str
 		}
+	} else {
+		log.Warning("all account disable")
 	}
 }
 
-func (s *Manager) Loop() {
+func (s *itsManager) loop() {
 	for {
 		time.Sleep(1 * time.Hour)
 		s.mutex.Lock()
 		now := time.Now()
 		if now.Day() != s.Day {
 			s.Day = now.Day()
-			for i := 0; i < s.Accounts.Size(); i++ {
-				v, _ := s.Accounts.Get(i)
-				v.(*AccountInfo).ConnectLimit = false
+			for _,v := range s.Accounts {
+				v.ConnectLimit = false
 			}
 		}
 		s.mutex.Unlock()
