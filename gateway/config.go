@@ -17,7 +17,8 @@ type config struct {
 	OfflineTime  uint64
 	Account      []interface{}
 	ItsURL       string
-	GroupFilter  uint64
+	Group        string
+	GroupFilter  string
 	TestMode     bool
 	IsServer     bool
 }
@@ -29,6 +30,11 @@ func (s *config) load(path string) *config {
 	}
 	s.Listen = "0.0.0.0:4432"
 	s.WebServer = "0.0.0.0:4432"
+	s.PingEvery = 500
+	s.SyncEvery = 6000
+	s.CheckEvery = 12000
+	s.DeleteEvery = 600000
+	s.OfflineTime = 6000
 	err = json.Unmarshal(d, s)
 	if err != nil {
 		log.Fatal(err)

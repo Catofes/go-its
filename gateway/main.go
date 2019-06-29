@@ -12,7 +12,15 @@ func Run(configPath string) {
 	ws = (&webServer{
 		config: *c,
 	}).init()
+
+	if c.IsServer {
+		its = (&itsManager{
+			config: *c,
+		}).init()
+	}
+
 	us.addService("syncService", ss)
 	us.addService("webService", ws)
+
 	us.run()
 }

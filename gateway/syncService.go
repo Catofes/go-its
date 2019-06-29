@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"net"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -42,28 +43,35 @@ func (s *remoteServer) run(udp *udpService) {
 
 type syncService struct {
 	config
-	address *net.UDPAddr
-	group   uint64
-	servers map[string]*remoteServer
-	udp     *udpService
-	mutex   *sync.Mutex
+	address     *net.UDPAddr
+	group       uint64
+	groupFilter uint64
+	servers     map[string]*remoteServer
+	udp         *udpService
+	mutex       *sync.Mutex
 }
 
 func (s *syncService) init() *syncService {
+	s.address, _ = net.ResolveUDPAddr("udp", s.config.Listen)
+	s.group, _ = strconv.ParseUint(s.config.Group, 2, 64)
+	s.groupFilter, _ = strconv.ParseUint(s.config.GroupFilter, 2, 64)
 	s.servers = make(map[string]*remoteServer)
 	s.mutex = &sync.Mutex{}
-	if !s.IsServer {
-		a, _ := net.ResolveUDPAddr("udp", s.config.CenterServer)
-		s.addServer(serverInfo{
-			Address: a,
-			Group:   0,
-		})
-	}
 	return s
 }
 
 func (s *syncService) run(udp *udpService) {
 	s.udp = udp
+	if !s.IsServer {
+		a, err := net.ResolveUDPAddr("udp", s.config.CenterServer)
+		if err != nil {
+			log.Fatal(err)
+		}
+		s.addServer(serverInfo{
+			Address: a,
+			Group:   0,
+		})
+	}
 	udp.addHandler(0, pingResponseHandler)
 	udp.addHandler(1, s.pingPackageHandler)
 	udp.addHandler(2, s.syncPackageHandler)
@@ -74,6 +82,7 @@ func (s *syncService) loop() {
 	go s.sendSyncPackages()
 	go s.deleteServer()
 	if s.IsServer {
+		time.Sleep(int2Time(s.config.CheckEvery))
 		go s.checkServer()
 	}
 }
@@ -81,6 +90,7 @@ func (s *syncService) loop() {
 func (s *syncService) sendSyncPackages() {
 	for {
 		time.Sleep(int2Time(s.config.SyncEvery))
+		log.Debugf("Send sync package to %v.\n", s.servers)
 		for k := range s.servers {
 			s.sendSyncPackageTo(k)
 		}
@@ -99,6 +109,7 @@ func (s *syncService) sendSyncPackageTo(address string) {
 	p := (&syncPackage{
 		Self: serverInfo{
 			Address: s.address,
+			Group:   s.group,
 		},
 		Token: s.config.Token,
 	}).init()
@@ -131,12 +142,13 @@ func (s *syncService) syncPackageHandler(conn *net.UDPConn, addr *net.UDPAddr, n
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	data = data[:n]
-	p := syncPackage{}
+	p := (&syncPackage{}).init()
 	p.loadFromData(data)
 	if p.Token != s.config.Token {
 		log.Info("wrong token package from %s", addr.String())
 		return
 	}
+	log.Debugf("Handle sync package from %s, remote servers %v .\n", addr.String(), p)
 	r, ok := s.servers[addr.String()]
 	if !ok {
 		r = s.addServer(p.Self)
@@ -144,21 +156,27 @@ func (s *syncService) syncPackageHandler(conn *net.UDPConn, addr *net.UDPAddr, n
 	if r == nil {
 		return
 	}
+	r.group = p.Self.Group
+	s.updateGroup(r)
 	for _, v := range p.Servers {
 		if _, ok := r.infos[v.Address.String()]; ok {
 			r.infos[v.Address.String()] = v
 		} else {
 			s.addServer(v)
+			r.infos[v.Address.String()] = v
 		}
 	}
-
 }
 
 func (s *syncService) addServer(p serverInfo) *remoteServer {
-	if p.Group != 0 && (p.Group&(^s.config.GroupFilter) == 0) {
+	if p.Address.String() == s.address.String() {
+		return nil
+	}
+	if p.Group != 0 && (p.Group&(^s.groupFilter) == 0) {
 		log.Info("filter server of %s", p.Address.String())
 		return nil
 	}
+	log.Debugf("Add server %s with group %d.\n", p.Address.String(), p.Group)
 	r := (&remoteServer{
 		config: s.config,
 	}).init(*p.Address)
@@ -169,7 +187,11 @@ func (s *syncService) addServer(p serverInfo) *remoteServer {
 }
 
 func (s *syncService) updateGroup(r *remoteServer) {
-	s.group = s.group | (r.group & (^s.config.GroupFilter))
+	t := s.group
+	s.group = s.group | (r.group & (^s.groupFilter))
+	if s.group != t {
+		log.Debugf("Add group [%d->%d].\n", t, s.group)
+	}
 }
 
 func (s *syncService) deleteServer() {

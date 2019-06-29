@@ -19,7 +19,9 @@ type serverInfo struct {
 }
 
 func (s *serverInfo) init() *serverInfo {
-	s.Address, _ = net.ResolveUDPAddr("udp4", "1.2.3.4:123")
+	if s.Address == nil {
+		s.Address, _ = net.ResolveUDPAddr("udp4", "1.2.3.4:123")
+	}
 	return s
 }
 

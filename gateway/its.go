@@ -85,9 +85,9 @@ type itsManager struct {
 	mutex           sync.Mutex
 }
 
-func (s *itsManager) init(c config) *itsManager {
+func (s *itsManager) init() *itsManager {
 	s.Accounts = make([]*accountInfo, 0)
-	for _, v := range c.Account {
+	for _, v := range s.config.Account {
 		a := v.(map[string]interface{})
 		u := a["Username"].(string)
 		p := a["Password"].(string)

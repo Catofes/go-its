@@ -19,19 +19,19 @@ type udpService struct {
 
 func (s *udpService) init() *udpService {
 	s.handlers = make(map[byte]handler)
-	return s
-}
-
-func (s *udpService) run() {
+	s.services = make(map[string]service)
 	address, err := net.ResolveUDPAddr("udp", s.Listen)
 	if err != nil {
 		log.Fatal("Can't resolve address: ", err)
 	}
 	s.conn, err = net.ListenUDP("udp", address)
 	if err != nil {
-		log.Fatal("Can't listen udp on", address, err)
+		log.Fatal("Can't listen udp on ", address, err)
 	}
-	defer s.conn.Close()
+	return s
+}
+
+func (s *udpService) run() {
 	for _, v := range s.services {
 		go v.run(s)
 	}
@@ -42,7 +42,7 @@ func (s *udpService) run() {
 			log.Warning("Error read connection. %s", err.Error())
 			continue
 		}
-		log.Debug("Get connection from %s, size %d.", remoteAddress.String(), n)
+		//log.Debug("Get connection from %s, size %d.", remoteAddress.String(), n)
 		if n <= 1 {
 			log.Warning("Error package length from %s.", remoteAddress.String())
 			continue

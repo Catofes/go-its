@@ -48,6 +48,7 @@ func (s *pingService) sendPingPackage() {
 		ID:            s.requestID + 1,
 		EchoTimestamp: time.Now().UnixNano(),
 	}).toData()
+	log.Debugf("Send ping request package to %s.\n", s.address)
 	_, err := s.udp.conn.WriteToUDP(data, s.address)
 	if err != nil {
 		log.Warning("Send ping request to %s failed. %s", s.address.String(), err)
@@ -63,13 +64,19 @@ func (s *pingService) Calculate() {
 		if s.responseIDs.Len() <= 0 {
 			break
 		}
-		if id, err := s.responseIDs.Peek(); err != nil {
+		if id, err := s.responseIDs.Peek(); err == nil {
 			if id.(int64) < outQueueID {
 				s.responseIDs.Get(1)
+			} else {
+				break
 			}
 		}
 	}
-	s.packageLost = float32(s.responseIDs.Len()) / float32(s.cap)
+	if outQueueID < 0 {
+		s.packageLost = float32(s.responseIDs.Len()) / float32(s.requestID+1)
+	} else {
+		s.packageLost = float32(s.responseIDs.Len()) / float32(s.cap)
+	}
 }
 
 func (s *pingService) handleResponsePackage(conn *net.UDPConn, addr *net.UDPAddr, n int, data []byte) {
@@ -77,6 +84,7 @@ func (s *pingService) handleResponsePackage(conn *net.UDPConn, addr *net.UDPAddr
 		log.Warning("Wrong ping package size from %s", addr.String())
 		return
 	}
+	log.Debugf("Handle ping response package from %s.\n", addr.String())
 	p := loadFromData(data)
 	s.responseIDs.Put(p.ID)
 	latency := time.Now().UnixNano() - p.EchoTimestamp
