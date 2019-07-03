@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
+	"os"
 )
 
 type config struct {
@@ -21,13 +23,15 @@ type config struct {
 	Group        string
 	GroupFilter  string
 	TestMode     bool
+	Debug        bool
 	IsServer     bool
 }
 
 func (s *config) load(path string) *config {
 	d, err := ioutil.ReadFile(path)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Print(err)
+		os.Exit(-1)
 	}
 	s.Listen = "0.0.0.0:4432"
 	s.WebServer = "0.0.0.0:4432"
@@ -40,7 +44,8 @@ func (s *config) load(path string) *config {
 	s.GroupFilter = "0"
 	err = json.Unmarshal(d, s)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Print(err)
+		os.Exit(-1)
 	}
 	return s
 }

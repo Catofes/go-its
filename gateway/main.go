@@ -3,6 +3,7 @@ package gateway
 //Run function is the main Entry
 func Run(configPath string) {
 	c := (&config{}).load(configPath)
+	logInit(c.Debug)
 	us = (&udpService{
 		config: *c,
 	}).init()
