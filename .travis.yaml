@@ -1,0 +1,10 @@
+language: go
+
+services:
+  - docker
+
+go:
+  - "1.12.x"
+
+before_install:
+  - docker build -t carlad/sinatra .
