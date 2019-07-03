@@ -7,7 +7,8 @@ import (
 
 type config struct {
 	Listen       string
-	CenterServer string
+	LocalAddress string
+	ConnectTo    []string
 	WebServer    string
 	Token        uint64
 	PingEvery    uint64
@@ -35,6 +36,8 @@ func (s *config) load(path string) *config {
 	s.CheckEvery = 12000
 	s.DeleteEvery = 600000
 	s.OfflineTime = 6000
+	s.Group = "0"
+	s.GroupFilter = "0"
 	err = json.Unmarshal(d, s)
 	if err != nil {
 		log.Fatal(err)

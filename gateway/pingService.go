@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"net"
 	"sync"
 	"time"
@@ -18,12 +19,16 @@ type pingService struct {
 	responseIDs *queue.Queue
 	udp         *udpService
 	mutex       *sync.Mutex
+	lastOnline  time.Time
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
 func (s *pingService) init() *pingService {
 	s.cap = 100
 	s.responseIDs = queue.New(2 * s.cap)
 	s.mutex = &sync.Mutex{}
+	s.ctx, s.cancel = context.WithCancel(context.Background())
 	return s
 }
 
@@ -35,8 +40,13 @@ func (s *pingService) run(udp *udpService) {
 func (s *pingService) loop() {
 	go func() {
 		for {
-			time.Sleep(s.every)
-			s.sendPingPackage()
+			select {
+			case <-s.ctx.Done():
+				return
+			default:
+				time.Sleep(s.every)
+				s.sendPingPackage()
+			}
 		}
 	}()
 }
@@ -48,7 +58,7 @@ func (s *pingService) sendPingPackage() {
 		ID:            s.requestID + 1,
 		EchoTimestamp: time.Now().UnixNano(),
 	}).toData()
-	log.Debugf("Send ping request package to %s.\n", s.address)
+	//log.Debugf("Send ping request package to %s.\n", s.address)
 	_, err := s.udp.conn.WriteToUDP(data, s.address)
 	if err != nil {
 		log.Warning("Send ping request to %s failed. %s", s.address.String(), err)
@@ -84,10 +94,11 @@ func (s *pingService) handleResponsePackage(conn *net.UDPConn, addr *net.UDPAddr
 		log.Warning("Wrong ping package size from %s", addr.String())
 		return
 	}
-	log.Debugf("Handle ping response package from %s.\n", addr.String())
+	//log.Debugf("Handle ping response package from %s.\n", addr.String())
 	p := loadFromData(data)
 	s.responseIDs.Put(p.ID)
 	latency := time.Now().UnixNano() - p.EchoTimestamp
 	s.latency = (s.latency*(s.cap-1) + latency) / s.cap
+	s.lastOnline = time.Now()
 	s.Calculate()
 }

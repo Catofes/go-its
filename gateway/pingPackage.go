@@ -50,7 +50,7 @@ func pingResponseHandler(conn *net.UDPConn, addr *net.UDPAddr, n int, data []byt
 		log.Warning("Wrong ping package size from %s", addr.String())
 		return
 	}
-	log.Debugf("Handler ping request package from: %s.\n", addr.String())
+	//log.Debugf("Handler ping request package from: %s.\n", addr.String())
 	r := loadFromData(data).response().toData()
 	r[0] = 1
 	n, err := conn.WriteToUDP(r, addr)

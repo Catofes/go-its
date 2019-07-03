@@ -31,30 +31,38 @@ func (s *webServer) getStatus(c echo.Context) error {
 	response := make(map[string]interface{})
 	if its != nil {
 		response["check_status"] = its.Status
-		response["last_check_time"] = its.LastCheckTime.Format("2006-01-02 15:04:05.999999999 -0700 MST")
+		response["last_check_time"] = ss.lastCheckTime.Format("2006-01-02 15:04:05.999999999 -0700 MST")
+		response["last_check_result"] = ss.checkResult
+		response["last_check_server_count"] = ss.serverCount
+		response["last_check_offline_count"] = ss.offLineCount
+		response["last_check_linkdown_count"] = ss.linkDownCount
 		response["last_connect_time"] = its.LastConnectTime.Format("2006-01-02 15:04:05.999999999 -0700 MST")
 		response["last_connect_response"] = its.LastText
 		response["lost_count"] = its.LostCount
 		response["lost_limit"] = its.LostLimit
 	}
 	type server struct {
-		Name       string
-		Infos      map[string]serverInfo
-		Group      uint64
-		Offline    bool
-		LinkDown   bool
-		LastOnline time.Time
+		Name        string
+		Infos       map[string]serverInfo
+		Group       uint64
+		Offline     bool
+		LinkDown    bool
+		Latency     int64
+		PackageLost float32
+		LastOnline  time.Time
 	}
 	response["config"] = ss
 	d := make(map[string]server)
 	for k, v := range ss.servers {
 		t := server{
-			Name:       k,
-			Infos:      v.infos,
-			Group:      v.group,
-			Offline:    v.offline,
-			LinkDown:   v.linkDown,
-			LastOnline: v.lastOnline,
+			Name:        k,
+			Infos:       v.infos,
+			Group:       v.group,
+			Offline:     v.offline,
+			LinkDown:    v.linkDown,
+			LastOnline:  v.lastOnline,
+			Latency:     v.pingService.latency,
+			PackageLost: v.pingService.packageLost,
 		}
 		d[k] = t
 	}

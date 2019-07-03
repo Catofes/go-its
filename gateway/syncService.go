@@ -12,12 +12,11 @@ var ss *syncService
 type remoteServer struct {
 	config
 	*pingService
-	group      uint64
-	infos      map[string]serverInfo
-	udp        *udpService
-	offline    bool
-	linkDown   bool
-	lastOnline time.Time
+	group    uint64
+	infos    map[string]serverInfo
+	udp      *udpService
+	offline  bool
+	linkDown bool
 }
 
 func (s *remoteServer) sameGroup(r *remoteServer) bool {
@@ -43,18 +42,34 @@ func (s *remoteServer) run(udp *udpService) {
 
 type syncService struct {
 	config
-	address     *net.UDPAddr
-	group       uint64
-	groupFilter uint64
-	servers     map[string]*remoteServer
-	udp         *udpService
-	mutex       *sync.Mutex
+	address       *net.UDPAddr
+	group         uint64
+	groupFilter   uint64
+	servers       map[string]*remoteServer
+	udp           *udpService
+	mutex         *sync.Mutex
+	linkDownCount int
+	offLineCount  int
+	serverCount   int
+	checkResult   bool
+	lastCheckTime time.Time
 }
 
 func (s *syncService) init() *syncService {
-	s.address, _ = net.ResolveUDPAddr("udp", s.config.Listen)
-	s.group, _ = strconv.ParseUint(s.config.Group, 2, 64)
-	s.groupFilter, _ = strconv.ParseUint(s.config.GroupFilter, 2, 64)
+	if s.config.LocalAddress != "" {
+		s.address, _ = net.ResolveUDPAddr("udp", s.config.LocalAddress)
+	} else {
+		s.address, _ = net.ResolveUDPAddr("udp", s.config.Listen)
+	}
+	var err error
+	s.group, err = strconv.ParseUint(s.config.Group, 2, 64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	s.groupFilter, err = strconv.ParseUint(s.config.GroupFilter, 2, 64)
+	if err != nil {
+		log.Fatal(err)
+	}
 	s.servers = make(map[string]*remoteServer)
 	s.mutex = &sync.Mutex{}
 	return s
@@ -62,15 +77,17 @@ func (s *syncService) init() *syncService {
 
 func (s *syncService) run(udp *udpService) {
 	s.udp = udp
-	if !s.IsServer {
-		a, err := net.ResolveUDPAddr("udp", s.config.CenterServer)
-		if err != nil {
-			log.Fatal(err)
+	for _, v := range s.config.ConnectTo {
+		if v != s.Listen {
+			a, err := net.ResolveUDPAddr("udp", v)
+			if err != nil {
+				log.Warningf("Add server failed: %s", err)
+			}
+			s.addServer(serverInfo{
+				Address: a,
+				Group:   0,
+			})
 		}
-		s.addServer(serverInfo{
-			Address: a,
-			Group:   0,
-		})
 	}
 	udp.addHandler(0, pingResponseHandler)
 	udp.addHandler(1, s.pingPackageHandler)
@@ -82,30 +99,33 @@ func (s *syncService) loop() {
 	go s.sendSyncPackages()
 	go s.deleteServer()
 	if s.IsServer {
-		time.Sleep(int2Time(s.config.CheckEvery))
-		go s.checkServer()
+		go func() {
+			for {
+				time.Sleep(int2Time(s.config.CheckEvery))
+				s.checkServer()
+			}
+		}()
 	}
 }
 
 func (s *syncService) sendSyncPackages() {
 	for {
 		time.Sleep(int2Time(s.config.SyncEvery))
+		s.mutex.Lock()
 		log.Debugf("Send sync package to %v.\n", s.servers)
-		for k := range s.servers {
-			s.sendSyncPackageTo(k)
+		for _, v := range s.servers {
+			s.sendSyncPackageTo(v)
 		}
+		s.mutex.Unlock()
 	}
 }
 
-func (s *syncService) sendSyncPackageTo(address string) {
-	remote, ok := s.servers[address]
-	if !ok {
+func (s *syncService) sendSyncPackageTo(remote *remoteServer) {
+	if remote.address.String() == s.address.String() {
 		return
 	}
 	remote.mutex.Lock()
 	defer remote.mutex.Unlock()
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
 	p := (&syncPackage{
 		Self: serverInfo{
 			Address: s.address,
@@ -120,6 +140,7 @@ func (s *syncService) sendSyncPackageTo(address string) {
 				Latency:     uint64(v.pingService.latency),
 				PackageLost: v.pingService.packageLost,
 				LastOnline:  uint64(v.lastOnline.UnixNano()),
+				Group:       v.group,
 			}
 			p.Servers = append(p.Servers, info)
 		}
@@ -158,6 +179,46 @@ func (s *syncService) syncPackageHandler(conn *net.UDPConn, addr *net.UDPAddr, n
 	}
 	r.group = p.Self.Group
 	s.updateGroup(r)
+	s.updateServer(r, p)
+}
+
+func (s *syncService) addServer(p serverInfo) *remoteServer {
+	if p.Address.String() == s.address.String() {
+		return nil
+	}
+	if _, ok := s.servers[p.Address.String()]; ok {
+		return nil
+	}
+	log.Debugf("Add server %s with group %d.\n", p.Address.String(), p.Group)
+	r := (&remoteServer{
+		config: s.config,
+	}).init(*p.Address)
+
+	if p.Group != 0 && (p.Group&(^s.groupFilter) == 0) {
+		log.Debug("filter server of %s, not running", p.Address.String())
+	} else {
+		r.run(s.udp)
+	}
+	s.servers[p.Address.String()] = r
+	s.updateGroup(r)
+	return r
+}
+
+func (s *syncService) updateGroup(r *remoteServer) *remoteServer {
+	t := s.group
+	s.group = s.group | (r.group & (^s.groupFilter))
+	if s.group != t {
+		log.Debugf("Add group [%d->%d].\n", t, s.group)
+	}
+	return r
+}
+
+func (s *syncService) updateServer(r *remoteServer, p *syncPackage) *remoteServer {
+	if r.group != 0 && (r.group&(^s.groupFilter) == 0) {
+		log.Info("delete server %s. different group [%d:%d]", r.address.String(), s.group, r.group)
+		r.cancel()
+		return nil
+	}
 	for _, v := range p.Servers {
 		if _, ok := r.infos[v.Address.String()]; ok {
 			r.infos[v.Address.String()] = v
@@ -166,42 +227,35 @@ func (s *syncService) syncPackageHandler(conn *net.UDPConn, addr *net.UDPAddr, n
 			r.infos[v.Address.String()] = v
 		}
 	}
-}
-
-func (s *syncService) addServer(p serverInfo) *remoteServer {
-	if p.Address.String() == s.address.String() {
-		return nil
-	}
-	if p.Group != 0 && (p.Group&(^s.groupFilter) == 0) {
-		log.Info("filter server of %s", p.Address.String())
-		return nil
-	}
-	log.Debugf("Add server %s with group %d.\n", p.Address.String(), p.Group)
-	r := (&remoteServer{
-		config: s.config,
-	}).init(*p.Address)
-	s.servers[p.Address.String()] = r
-	r.run(s.udp)
-	s.updateGroup(r)
 	return r
-}
-
-func (s *syncService) updateGroup(r *remoteServer) {
-	t := s.group
-	s.group = s.group | (r.group & (^s.groupFilter))
-	if s.group != t {
-		log.Debugf("Add group [%d->%d].\n", t, s.group)
-	}
 }
 
 func (s *syncService) deleteServer() {
 	for {
-		time.Sleep(100 * int2Time(s.CheckEvery))
+		time.Sleep(4 * int2Time(s.CheckEvery))
 		s.mutex.Lock()
 		for k, v := range s.servers {
-			if v.lastOnline.Add(int2Time(s.config.DeleteEvery)).Before(time.Now()) {
-				log.Warning("Delete server %s.", k)
+			ignore := false
+			if !s.IsServer {
+				for _, v := range s.ConnectTo {
+					if k == v {
+						ignore = true
+						break
+					}
+				}
+			}
+			if ignore {
+				continue
+			}
+			select {
+			case <-v.ctx.Done():
 				delete(s.servers, k)
+			default:
+				if v.lastOnline.Add(int2Time(s.config.DeleteEvery)).Before(time.Now()) {
+					log.Warning("Delete server %s.", k)
+					v.cancel()
+					delete(s.servers, k)
+				}
 			}
 		}
 		s.mutex.Unlock()
@@ -211,11 +265,16 @@ func (s *syncService) deleteServer() {
 func (s *syncService) checkServer() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	linkDownCount := 0
-	offLineCount := 0
-	serverCount := 0
-	checkResult := false
+	s.linkDownCount = 0
+	s.offLineCount = 0
+	s.serverCount = 0
+	s.checkResult = false
+	s.lastCheckTime = time.Now()
 	for k, v := range s.servers {
+		//Ignore self
+		if k == s.address.String() {
+			continue
+		}
 		//Ignore blank server
 		if v.lastOnline.Equal(time.Time{}) {
 			continue
@@ -226,15 +285,22 @@ func (s *syncService) checkServer() {
 			continue
 		}
 
-		serverCount++
+		s.serverCount++
 		//Time out
 		if v.lastOnline.Add(2 * int2Time(s.config.OfflineTime)).Before(time.Now()) {
 			timeoutCount := 0
 			totalServer := 0
 			for n, u := range s.servers {
+				//Ignore self
 				if k == n {
 					continue
 				}
+
+				//Ignore not same group server
+				if s.group&v.group == 0 {
+					continue
+				}
+
 				if rs, ok := u.infos[k]; ok {
 					totalServer++
 					t := time.Unix(int64(rs.LastOnline)/1e9, int64(rs.LastOnline)%1e9)
@@ -246,28 +312,29 @@ func (s *syncService) checkServer() {
 			if float64(timeoutCount)/float64(totalServer) > 0.6 {
 				v.offline = true
 				v.linkDown = false
-				offLineCount++
+				s.offLineCount++
 			} else {
 				v.linkDown = true
 				v.offline = false
-				linkDownCount++
+				s.linkDownCount++
 			}
 		} else {
+			v.linkDown = false
 			v.offline = false
 		}
-		log.Debug("Check Result: Offline/LinkDown: %d/%d", offLineCount, linkDownCount)
-		if float64(offLineCount)/float64(len(s.servers)) > 0.6 {
-			log.Warning("%d/%d OffLine!", offLineCount, serverCount)
-			checkResult = true
-		}
-		if linkDownCount > 0 {
-			log.Warning("%d/%d Link Down!", linkDownCount, serverCount)
-			checkResult = true
-		}
-		if checkResult {
-			its.linkDown()
-		} else {
-			its.linkUp()
-		}
+	}
+	log.Debug("Check Result: Offline/LinkDown: %d/%d", s.offLineCount, s.linkDownCount)
+	if float64(s.offLineCount)/float64(s.serverCount) > 0.6 {
+		log.Warning("%d/%d OffLine!", s.offLineCount, s.serverCount)
+		s.checkResult = true
+	}
+	if s.linkDownCount > 0 {
+		log.Warning("%d/%d Link Down!", s.linkDownCount, s.serverCount)
+		s.checkResult = true
+	}
+	if s.checkResult {
+		its.linkDown()
+	} else {
+		its.linkUp()
 	}
 }

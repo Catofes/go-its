@@ -78,7 +78,6 @@ type itsManager struct {
 	Status          bool
 	LastText        string
 	LastConnectTime time.Time
-	LastCheckTime   time.Time
 	LostCount       int
 	LostLimit       int
 	Day             int
@@ -126,12 +125,9 @@ func (s *itsManager) linkUp() {
 	s.LostCount = 0
 	s.LostLimit = s.LostLimit/2 + 1
 	s.Status = true
-	s.LastCheckTime = time.Now()
 }
 
 func (s *itsManager) connect() {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
 	var account *accountInfo
 	for _, v := range s.Accounts {
 		if !v.ConnectLimit {
