@@ -7,4 +7,4 @@ go:
   - "1.12.x"
 
 before_install:
-  - docker build -t carlad/sinatra .
+  - docker build -t catofes/go-its .
